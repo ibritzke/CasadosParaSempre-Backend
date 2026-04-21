@@ -1,0 +1,110 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  HUSBAND
+  WIFE
+  ADMIN
+}
+
+enum EventType {
+  SEX
+  PERIOD
+  CYCLE
+  NOTE
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String?
+  role          Role
+  spouseName    String?
+  coupleCode    String?   // código para vincular casal
+  googleId      String?   @unique
+  avatarUrl     String?
+  isAdmin       Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  pillDraws     PillDraw[]
+  pillRecords   PillRecord[]
+  calendarEvents CalendarEvent[]
+
+  @@map("users")
+}
+
+model Pill {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String
+  emoji       String
+  color       String
+  isActive    Boolean   @default(true)
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  draws       PillDraw[]
+
+  @@map("pills")
+}
+
+model PillDraw {
+  id          String    @id @default(cuid())
+  userId      String
+  pillId      Int
+  weekNumber  Int
+  year        Int
+  drawnAt     DateTime  @default(now())
+  expiresAt   DateTime
+  cancelled   Boolean   @default(false)
+  cancelledAt DateTime?
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pill        Pill      @relation(fields: [pillId], references: [id])
+  records     PillRecord[]
+
+  @@unique([userId, weekNumber, year])
+  @@map("pill_draws")
+}
+
+model PillRecord {
+  id          String    @id @default(cuid())
+  userId      String
+  drawId      String
+  what        String
+  when        DateTime
+  how         String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  draw        PillDraw  @relation(fields: [drawId], references: [id], onDelete: Cascade)
+
+  @@map("pill_records")
+}
+
+model CalendarEvent {
+  id          String      @id @default(cuid())
+  userId      String
+  type        EventType
+  date        DateTime
+  note        String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("calendar_events")
+}

@@ -1,0 +1,13 @@
+# railway.toml — Backend deploy config
+[build]
+builder = "nixpacks"
+buildCommand = "npm install && npm run db:generate && npm run build"
+
+[deploy]
+startCommand = "npm run start"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+
+[[services]]
+name = "casados-api"
