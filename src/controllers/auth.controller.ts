@@ -161,3 +161,36 @@ export async function me(req: AuthRequest, res: Response) {
   });
   return res.json({ user });
 }
+
+export async function forgotPassword(req: Request, res: Response) {
+  const { email } = req.body
+  if (!email) return res.status(400).json({ error: 'Email obrigatório' })
+
+  await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${process.env.FRONTEND_URL}/reset-password`,
+  })
+
+  return res.json({ message: 'Se o email existir, você receberá as instruções.' })
+}
+
+export async function resetPassword(req: Request, res: Response) {
+  const { accessToken, newPassword } = req.body
+  if (!accessToken || !newPassword) return res.status(400).json({ error: 'Dados incompletos' })
+  if (newPassword.length < 6) return res.status(400).json({ error: 'Senha mínima: 6 caracteres' })
+
+  const { data: userData } = await supabase.auth.getUser(accessToken)
+  if (!userData.user) return res.status(401).json({ error: 'Token inválido' })
+
+  const { error } = await supabase.auth.admin.updateUserById(userData.user.id, { password: newPassword })
+  if (error) return res.status(400).json({ error: 'Erro ao redefinir senha' })
+
+  if (userData.user.email) {
+    const bcrypt = await import('bcryptjs')
+    await prisma.user.updateMany({
+      where: { email: userData.user.email },
+      data: { passwordHash: await (bcrypt as typeof import('bcryptjs')).hash(newPassword, 12) },
+    })
+  }
+
+  return res.json({ message: 'Senha redefinida com sucesso!' })
+}
