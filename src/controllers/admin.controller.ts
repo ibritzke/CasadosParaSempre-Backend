@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { AuthRequest } from '../middleware/auth.middleware';
+import { supabase } from '../lib/supabase';
 
 export async function getStats(_req: AuthRequest, res: Response) {
   const [totalUsers, husbands, wives, totalDraws, totalRecords, totalEvents] = await Promise.all([
@@ -69,4 +70,35 @@ export async function getPillStats(_req: AuthRequest, res: Response) {
   return res.json({
     pillStats: pillStats.map(s => ({ ...pillMap[s.pillId], count: s._count.pillId })),
   });
+}
+
+export async function deleteUser(req: AuthRequest, res: Response) {
+  const { id } = req.params;
+
+  if (id === req.user!.id) {
+    return res.status(400).json({ error: 'Não pode excluir sua própria conta' });
+  }
+
+  const user = await prisma.user.findUnique({ where: { id } });
+
+  if (!user) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+
+  // 1. Remove do Supabase primeiro
+  if (user.googleId) {
+    const { error } = await supabase.auth.admin.deleteUser(user.googleId);
+
+    if (error) {
+      return res.status(500).json({
+        error: 'Erro ao remover usuário do Supabase',
+        details: error.message,
+      });
+    }
+  }
+
+  // 2. Remove do banco
+  await prisma.user.delete({ where: { id } });
+
+  return res.json({ message: 'Conta removida com sucesso' });
 }
