@@ -17,4 +17,5 @@ router.get("/pill-stats", getPillStats);
 router.patch("/users/:id/admin", toggleUserAdmin);
 router.patch("/users/:id/active", toggleUserActive);
 router.delete("/users/:id", deleteUser);
+
 export default router;
