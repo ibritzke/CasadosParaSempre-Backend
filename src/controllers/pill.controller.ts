@@ -131,3 +131,22 @@ export async function deleteRecord(req: AuthRequest, res: Response) {
   await prisma.pillRecord.delete({ where: { id } });
   return res.json({ message: 'Registro removido' });
 }
+
+export async function updateRecord(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const data = recordSchema.parse(req.body);
+    
+    const record = await prisma.pillRecord.findFirst({ where: { id, userId: req.user!.id } });
+    if (!record) return res.status(404).json({ error: 'Registro não encontrado' });
+
+    const updated = await prisma.pillRecord.update({
+      where: { id },
+      data: { what: data.what, when: new Date(data.when), how: data.how },
+    });
+    return res.json({ record: updated });
+  } catch (err) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: 'Dados inválidos', details: err.errors });
+    throw err;
+  }
+}
