@@ -4,9 +4,10 @@ import { prisma } from '../lib/prisma';
 import { AuthRequest } from '../middleware/auth.middleware';
 
 const eventSchema = z.object({
-  type: z.enum(['SEX', 'PERIOD', 'NOTE']),
+  type: z.enum(['SEX', 'PERIOD', 'NOTE', 'CELEBRATION']),
   date: z.string().datetime(),
   endDate: z.string().datetime().optional().nullable(),
+  recurrence: z.enum(['none', 'monthly', 'annual']).optional(),
   note: z.string().max(1000).optional(),
 });
 
@@ -15,22 +16,45 @@ export async function getEvents(req: AuthRequest, res: Response) {
   const userId = req.user!.id;
 
   const where: Record<string, unknown> = { userId };
+  let exactEvents: any[] = [];
   if (month && year) {
-    // Include events that START or END within the month, or span across it
     const start = new Date(Number(year), Number(month), 1);
     const end = new Date(Number(year), Number(month) + 1, 0, 23, 59, 59);
     where.OR = [
       { date: { gte: start, lte: end } },
       { endDate: { gte: start, lte: end } },
-      // Period spans entire month
       { AND: [{ date: { lte: start } }, { endDate: { gte: end } }] },
     ];
   }
 
-  const events = await prisma.calendarEvent.findMany({
+  exactEvents = await prisma.calendarEvent.findMany({
     where,
     orderBy: { date: 'asc' },
   });
+
+  // Handle recurring mappings
+  let events = [...exactEvents];
+  if (month && year) {
+    const recurringEvents = await prisma.calendarEvent.findMany({
+      where: { userId, recurrence: { in: ['monthly', 'annual'] }, date: { lt: new Date(Number(year), Number(month) + 1, 1) } }
+    });
+    
+    const remappedRecurring = recurringEvents.flatMap(e => {
+      const isMatch = e.recurrence === 'monthly' || (e.recurrence === 'annual' && e.date.getMonth() === Number(month));
+      if (!isMatch) return [];
+      
+      const isPast = e.date.getFullYear() < Number(year) || (e.date.getFullYear() === Number(year) && e.date.getMonth() < Number(month));
+      if (!isPast) return [];
+
+      return {
+        ...e,
+        date: new Date(Number(year), Number(month), e.date.getDate(), e.date.getHours(), e.date.getMinutes(), e.date.getSeconds()),
+        endDate: null,
+      };
+    });
+
+    events = [...exactEvents, ...remappedRecurring].sort((a, b) => a.date.getTime() - b.date.getTime());
+  }
 
   // Calculate average cycle length from PERIOD start dates
   const allPeriods = await prisma.calendarEvent.findMany({
@@ -52,15 +76,22 @@ export async function getEvents(req: AuthRequest, res: Response) {
     }
   }
 
-  // Predict next period date
+  // Predict next period date and fertile window
   let nextPeriodDate: string | null = null;
+  let fertileWindow: { start: string; end: string } | null = null;
+
   if (avgCycleDays && allPeriods.length >= 1) {
     const lastPeriod = allPeriods[allPeriods.length - 1].date;
     const next = new Date(lastPeriod.getTime() + avgCycleDays * 24 * 60 * 60 * 1000);
     nextPeriodDate = next.toISOString();
+
+    const ovulation = new Date(next.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const fStart = new Date(ovulation.getTime() - 5 * 24 * 60 * 60 * 1000);
+    const fEnd = new Date(ovulation.getTime() + 1 * 24 * 60 * 60 * 1000);
+    fertileWindow = { start: fStart.toISOString(), end: fEnd.toISOString() };
   }
 
-  return res.json({ events, avgCycleDays, nextPeriodDate });
+  return res.json({ events, avgCycleDays, nextPeriodDate, fertileWindow });
 }
 
 export async function createEvent(req: AuthRequest, res: Response) {
@@ -72,6 +103,7 @@ export async function createEvent(req: AuthRequest, res: Response) {
         type: data.type,
         date: new Date(data.date),
         endDate: data.endDate ? new Date(data.endDate) : null,
+        recurrence: data.recurrence || 'none',
         note: data.note,
       },
     });
