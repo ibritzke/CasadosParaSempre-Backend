@@ -36,19 +36,14 @@ export const drawPill = asyncHandler(async (req: AuthRequest, res: Response) => 
   const userId = req.user!.id;
   const { week, year } = getISOWeek(new Date());
 
-  // Check if already has a draw this week
-  const existing = await prisma.pillDraw.findUnique({
-    where: { userId_weekNumber_year: { userId, weekNumber: week, year } },
+  // Check if already has an active, non-expired draw
+  const existing = await prisma.pillDraw.findFirst({
+    where: { userId, cancelled: false, expiresAt: { gt: new Date() } },
     include: { pill: true },
   });
 
   if (existing && !existing.cancelled) {
-    return res.status(409).json({ error: 'Você já sorteou uma pílula esta semana', draw: existing });
-  }
-
-  // If there was a cancelled draw for this week, delete it first so we can create a new unique entry
-  if (existing && existing.cancelled) {
-    await prisma.pillDraw.delete({ where: { id: existing.id } });
+    return res.status(409).json({ error: 'Você já tem uma pílula ativa não cancelada esta semana', draw: existing });
   }
 
   // Get pills not drawn recently (last 4 weeks)

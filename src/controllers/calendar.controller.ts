@@ -76,22 +76,37 @@ export async function getEvents(req: AuthRequest, res: Response) {
     }
   }
 
-  // Predict next period date and fertile window
-  let nextPeriodDate: string | null = null;
-  let fertileWindow: { start: string; end: string } | null = null;
+  // Predict next period dates and fertile windows
+  const predictedPeriods: string[] = [];
+  const fertileWindows: { start: string; end: string }[] = [];
 
   if (avgCycleDays && allPeriods.length >= 1) {
-    const lastPeriod = allPeriods[allPeriods.length - 1].date;
-    const next = new Date(lastPeriod.getTime() + avgCycleDays * 24 * 60 * 60 * 1000);
-    nextPeriodDate = next.toISOString();
+    // 1. Calculate historical/current fertile windows for recorded periods (except the very first one where we don't know the prior cycle)
+    for (let i = 1; i < allPeriods.length; i++) {
+      const currentPeriod = allPeriods[i].date;
+      const ovulation = new Date(currentPeriod.getTime() - 14 * 24 * 60 * 60 * 1000);
+      const fStart = new Date(ovulation.getTime() - 5 * 24 * 60 * 60 * 1000);
+      const fEnd = new Date(ovulation.getTime() + 1 * 24 * 60 * 60 * 1000);
+      fertileWindows.push({ start: fStart.toISOString(), end: fEnd.toISOString() });
+    }
 
-    const ovulation = new Date(next.getTime() - 14 * 24 * 60 * 60 * 1000);
-    const fStart = new Date(ovulation.getTime() - 5 * 24 * 60 * 60 * 1000);
-    const fEnd = new Date(ovulation.getTime() + 1 * 24 * 60 * 60 * 1000);
-    fertileWindow = { start: fStart.toISOString(), end: fEnd.toISOString() };
+    // 2. Project future cycles (e.g. next 3 cycles)
+    const lastPeriod = allPeriods[allPeriods.length - 1].date;
+    let nextDateObj = new Date(lastPeriod.getTime() + avgCycleDays * 24 * 60 * 60 * 1000);
+    
+    for (let i = 0; i < 3; i++) {
+      predictedPeriods.push(nextDateObj.toISOString());
+      
+      const ovulation = new Date(nextDateObj.getTime() - 14 * 24 * 60 * 60 * 1000);
+      const fStart = new Date(ovulation.getTime() - 5 * 24 * 60 * 60 * 1000);
+      const fEnd = new Date(ovulation.getTime() + 1 * 24 * 60 * 60 * 1000);
+      fertileWindows.push({ start: fStart.toISOString(), end: fEnd.toISOString() });
+      
+      nextDateObj = new Date(nextDateObj.getTime() + avgCycleDays * 24 * 60 * 60 * 1000);
+    }
   }
 
-  return res.json({ events, avgCycleDays, nextPeriodDate, fertileWindow });
+  return res.json({ events, avgCycleDays, predictedPeriods, fertileWindows });
 }
 
 export async function createEvent(req: AuthRequest, res: Response) {

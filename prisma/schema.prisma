@@ -75,7 +75,6 @@ model PillDraw {
   pill        Pill      @relation(fields: [pillId], references: [id])
   records     PillRecord[]
 
-  @@unique([userId, weekNumber, year])
   @@map("pill_draws")
 }
 
