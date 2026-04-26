@@ -67,7 +67,7 @@ export const drawPill = asyncHandler(async (req: AuthRequest, res: Response) => 
   }
 
   const pill = pool[Math.floor(Math.random() * pool.length)];
-  const expiresAt = getNextMonday();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days from now
 
   const draw = await prisma.pillDraw.create({
     data: { userId, pillId: pill.id, weekNumber: week, year, expiresAt },
@@ -79,14 +79,14 @@ export const drawPill = asyncHandler(async (req: AuthRequest, res: Response) => 
 
 export const getCurrentDraw = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
-  const { week, year } = getISOWeek(new Date());
 
-  const draw = await prisma.pillDraw.findUnique({
-    where: { userId_weekNumber_year: { userId, weekNumber: week, year } },
+  const draw = await prisma.pillDraw.findFirst({
+    where: { userId, cancelled: false, expiresAt: { gt: new Date() } },
+    orderBy: { drawnAt: 'desc' },
     include: { pill: true, records: { orderBy: { when: 'desc' } } },
   });
 
-  return res.json({ draw: draw?.cancelled ? null : draw });
+  return res.json({ draw });
 });
 
 export const cancelDraw = asyncHandler(async (req: AuthRequest, res: Response) => {
