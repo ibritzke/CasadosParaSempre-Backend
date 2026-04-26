@@ -12,6 +12,9 @@ import userRoutes from './routes/user.routes';
 import { errorHandler } from './middleware/error.middleware';
 
 const app = express();
+
+// Trust Railway/Vercel/Heroku reverse proxies (required for rate-limiting behind load balancers)
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 // Security
@@ -36,8 +39,10 @@ app.use(cors({
 }));
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 200,
   message: { error: 'Muitas requisições, tente novamente em alguns minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 }));
 app.use(express.json({ limit: '10kb' }));
 

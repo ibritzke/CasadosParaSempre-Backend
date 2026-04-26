@@ -3,6 +3,16 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { AuthRequest } from '../middleware/auth.middleware';
 
+// Helper to wrap async route handlers and catch errors
+function asyncHandler(fn: (req: AuthRequest, res: Response) => Promise<any>) {
+  return (req: AuthRequest, res: Response) => {
+    fn(req, res).catch((err: Error) => {
+      console.error('❌ Controller error:', err.message, err.stack);
+      res.status(500).json({ error: 'Erro interno do servidor' });
+    });
+  };
+}
+
 function getISOWeek(date: Date): { week: number; year: number } {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -22,7 +32,7 @@ function getNextMonday(): Date {
   return nextMonday;
 }
 
-export async function drawPill(req: AuthRequest, res: Response) {
+export const drawPill = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
   const { week, year } = getISOWeek(new Date());
 
@@ -36,6 +46,11 @@ export async function drawPill(req: AuthRequest, res: Response) {
     return res.status(409).json({ error: 'Você já sorteou uma pílula esta semana', draw: existing });
   }
 
+  // If there was a cancelled draw for this week, delete it first so we can create a new unique entry
+  if (existing && existing.cancelled) {
+    await prisma.pillDraw.delete({ where: { id: existing.id } });
+  }
+
   // Get pills not drawn recently (last 4 weeks)
   const recentDraws = await prisma.pillDraw.findMany({
     where: { userId, cancelled: false, drawnAt: { gte: new Date(Date.now() - 28 * 24 * 60 * 60 * 1000) } },
@@ -47,6 +62,10 @@ export async function drawPill(req: AuthRequest, res: Response) {
   const availablePills = allPills.filter(p => !recentPillIds.includes(p.id));
   const pool = availablePills.length > 0 ? availablePills : allPills;
 
+  if (pool.length === 0) {
+    return res.status(400).json({ error: 'Nenhuma pílula disponível para sorteio' });
+  }
+
   const pill = pool[Math.floor(Math.random() * pool.length)];
   const expiresAt = getNextMonday();
 
@@ -56,9 +75,9 @@ export async function drawPill(req: AuthRequest, res: Response) {
   });
 
   return res.status(201).json({ draw });
-}
+});
 
-export async function getCurrentDraw(req: AuthRequest, res: Response) {
+export const getCurrentDraw = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
   const { week, year } = getISOWeek(new Date());
 
@@ -68,9 +87,9 @@ export async function getCurrentDraw(req: AuthRequest, res: Response) {
   });
 
   return res.json({ draw: draw?.cancelled ? null : draw });
-}
+});
 
-export async function cancelDraw(req: AuthRequest, res: Response) {
+export const cancelDraw = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
   const { id } = req.params;
 
@@ -83,9 +102,9 @@ export async function cancelDraw(req: AuthRequest, res: Response) {
   });
 
   return res.json({ message: 'Pílula cancelada' });
-}
+});
 
-export async function getHistory(req: AuthRequest, res: Response) {
+export const getHistory = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user!.id;
   const draws = await prisma.pillDraw.findMany({
     where: { userId },
@@ -93,24 +112,30 @@ export async function getHistory(req: AuthRequest, res: Response) {
     orderBy: { drawnAt: 'desc' },
   });
   return res.json({ draws });
-}
+});
 
-export async function getAllPills(_req: AuthRequest, res: Response) {
+export const getAllPills = asyncHandler(async (_req: AuthRequest, res: Response) => {
   const pills = await prisma.pill.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } });
   return res.json({ pills });
-}
+});
 
 // Records
-const recordSchema = z.object({
+const createRecordSchema = z.object({
   drawId: z.string(),
   what: z.string().min(1).max(2000),
   when: z.string().datetime(),
   how: z.string().max(2000).optional(),
 });
 
-export async function createRecord(req: AuthRequest, res: Response) {
+const updateRecordSchema = z.object({
+  what: z.string().min(1).max(2000),
+  when: z.string().datetime(),
+  how: z.string().max(2000).optional(),
+});
+
+export const createRecord = asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
-    const data = recordSchema.parse(req.body);
+    const data = createRecordSchema.parse(req.body);
     const draw = await prisma.pillDraw.findFirst({ where: { id: data.drawId, userId: req.user!.id } });
     if (!draw) return res.status(404).json({ error: 'Sorteio não encontrado' });
 
@@ -122,20 +147,20 @@ export async function createRecord(req: AuthRequest, res: Response) {
     if (err instanceof z.ZodError) return res.status(400).json({ error: 'Dados inválidos', details: err.errors });
     throw err;
   }
-}
+});
 
-export async function deleteRecord(req: AuthRequest, res: Response) {
+export const deleteRecord = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const record = await prisma.pillRecord.findFirst({ where: { id, userId: req.user!.id } });
   if (!record) return res.status(404).json({ error: 'Registro não encontrado' });
   await prisma.pillRecord.delete({ where: { id } });
   return res.json({ message: 'Registro removido' });
-}
+});
 
-export async function updateRecord(req: AuthRequest, res: Response) {
+export const updateRecord = asyncHandler(async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const data = recordSchema.parse(req.body);
+    const data = updateRecordSchema.parse(req.body);
     
     const record = await prisma.pillRecord.findFirst({ where: { id, userId: req.user!.id } });
     if (!record) return res.status(404).json({ error: 'Registro não encontrado' });
@@ -149,4 +174,4 @@ export async function updateRecord(req: AuthRequest, res: Response) {
     if (err instanceof z.ZodError) return res.status(400).json({ error: 'Dados inválidos', details: err.errors });
     throw err;
   }
-}
+});

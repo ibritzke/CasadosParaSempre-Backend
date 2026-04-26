@@ -86,7 +86,10 @@ export async function googleAuth(req: Request, res: Response) {
 
     // Verify token with Supabase
     const { data: { user: sbUser }, error } = await supabase.auth.getUser(accessToken);
-    if (error || !sbUser) return res.status(401).json({ error: 'Token Google inválido' });
+    if (error || !sbUser) {
+      console.error('❌ Supabase getUser error:', error?.message);
+      return res.status(401).json({ error: 'Token Google inválido. Tente fazer login novamente.' });
+    }
 
     let user = await prisma.user.findFirst({
       where: { OR: [{ googleId: sbUser.id }, { email: sbUser.email! }] },
@@ -114,7 +117,8 @@ export async function googleAuth(req: Request, res: Response) {
       user: { id: user.id, name: user.name, email: user.email, role: user.role, spouseName: user.spouseName, isAdmin: user.isAdmin, createdAt: user.createdAt },
     });
   } catch (err) {
-    throw err;
+    console.error('❌ googleAuth error:', err);
+    return res.status(500).json({ error: 'Erro no login com Google. Tente novamente.' });
   }
 }
 
