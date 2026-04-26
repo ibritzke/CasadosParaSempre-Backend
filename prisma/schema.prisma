@@ -19,7 +19,6 @@ enum Role {
 enum EventType {
   SEX
   PERIOD
-  CYCLE
   NOTE
 }
 
@@ -100,6 +99,7 @@ model CalendarEvent {
   userId      String
   type        EventType
   date        DateTime
+  endDate     DateTime?
   note        String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
