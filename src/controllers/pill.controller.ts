@@ -52,7 +52,7 @@ export const drawPill = asyncHandler(async (req: AuthRequest, res: Response) => 
     select: { pillId: true },
   });
   const recentPillIds = recentDraws.map(d => d.pillId);
-
+ 
   const allPills = await prisma.pill.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } });
   const availablePills = allPills.filter(p => !recentPillIds.includes(p.id));
   const pool = availablePills.length > 0 ? availablePills : allPills;
